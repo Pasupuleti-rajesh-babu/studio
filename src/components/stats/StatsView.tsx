@@ -31,11 +31,12 @@ import {
   AreaChart as RechartsAreaChart,
 } from "recharts"
 import { format, subDays, eachDayOfInterval, parseISO } from 'date-fns';
+import { StatsInsight } from '@/components/ai/StatsInsight'; // Added import
 
 const CHART_COLORS = ["hsl(var(--chart-1))", "hsl(var(--chart-2))", "hsl(var(--chart-3))", "hsl(var(--chart-4))", "hsl(var(--chart-5))"];
 
 export function StatsView() {
-  const { habits } = useHabits();
+  const { habits, getStreak } = useHabits(); // Added getStreak
 
   const activeHabits = useMemo(() => habits.filter(h => !h.archived), [habits]);
 
@@ -64,11 +65,19 @@ export function StatsView() {
 
   const habitSpecificCompletion: HabitCompletionStat[] = useMemo(() => {
      return activeHabits.map((habit, index) => {
-      const totalEntries = Object.keys(habit.progress).length;
+      // Calculate completion rate based on tracked days for this habit
+      const progressDates = Object.keys(habit.progress).map(dateStr => parseISO(dateStr));
+      if (progressDates.length === 0) return { name: habit.name, value: 0, fill: habit.color || CHART_COLORS[index % CHART_COLORS.length] };
+
+      const minDate = new Date(Math.min(...progressDates.map(d => d.getTime())));
+      const maxDate = new Date(Math.max(...progressDates.map(d => d.getTime()), new Date().getTime())); // include today even if no entry
+      
+      const totalTrackedDaysPossible = eachDayOfInterval({start: minDate, end: maxDate}).length;
       const completedEntries = Object.values(habit.progress).filter(Boolean).length;
+      
       return {
         name: habit.name,
-        value: totalEntries > 0 ? (completedEntries / totalEntries) * 100 : 0,
+        value: totalTrackedDaysPossible > 0 ? parseFloat(((completedEntries / totalTrackedDaysPossible) * 100).toFixed(1)) : 0,
         fill: habit.color || CHART_COLORS[index % CHART_COLORS.length],
       };
     }).sort((a, b) => b.value - a.value); // Sort by completion rate
@@ -76,47 +85,32 @@ export function StatsView() {
 
   const dailySummaryData = useMemo(() => {
      if (activeHabits.length === 0) return null;
-     const todayStr = format(new Date(), 'yyyy-MM-dd');
      const yesterdayStr = format(subDays(new Date(), 1), 'yyyy-MM-dd');
      
      const habitsCompletedYesterday = activeHabits.filter(h => h.progress[yesterdayStr]).length;
      const totalHabitsTracked = activeHabits.length;
      const completionRateYesterday = totalHabitsTracked > 0 ? (habitsCompletedYesterday / totalHabitsTracked) * 100 : 0;
      
-     const longestStreak = Math.max(0, ...activeHabits.map(h => {
-        let streak = 0;
-        let current = new Date();
-        // eslint-disable-next-line no-constant-condition
-        while(true) {
-            const dateKey = format(current, 'yyyy-MM-dd');
-            if(h.progress[dateKey]) {
-                streak++;
-                current = subDays(current, 1);
-            } else {
-                break;
-            }
-        }
-        return streak;
-     }));
+     const longestOverallStreak = Math.max(0, ...activeHabits.map(h => getStreak(h.id)));
 
      return {
          completionRate: completionRateYesterday,
          totalHabits: totalHabitsTracked,
          habitsCompleted: habitsCompletedYesterday,
-         longestStreak: longestStreak
+         longestStreak: longestOverallStreak
      };
-  }, [activeHabits]);
+  }, [activeHabits, getStreak]);
 
 
   if (activeHabits.length === 0) {
     return (
-      <Card className="glass-card">
+      <Card className="glass-card mt-8">
         <CardHeader>
           <CardTitle className="font-headline text-xl flex items-center"><BarChart className="mr-2 h-5 w-5 text-primary" />Your Statistics</CardTitle>
           <CardDescription>Track some habits to see your progress here.</CardDescription>
         </CardHeader>
         <CardContent>
-          <p className="text-muted-foreground">No data to display yet.</p>
+          <p className="text-muted-foreground">No data to display yet. Add some habits and mark their progress!</p>
         </CardContent>
       </Card>
     );
@@ -151,7 +145,7 @@ export function StatsView() {
       <Card className="glass-card">
         <CardHeader>
           <CardTitle className="font-headline text-xl flex items-center"><PieChart className="mr-2 h-5 w-5 text-primary" />Habit Success Rates</CardTitle>
-          <CardDescription>Overall success rate for each active habit.</CardDescription>
+          <CardDescription>Overall success rate for each active habit since tracking began or last 30 days.</CardDescription>
         </CardHeader>
         <CardContent>
           <ChartContainer config={chartConfig} className="h-[300px] w-full">
@@ -163,6 +157,7 @@ export function StatsView() {
                   const radius = innerRadius + (outerRadius - innerRadius) * 0.5;
                   const x = cx + radius * Math.cos(-midAngle * RADIAN);
                   const y = cy + radius * Math.sin(-midAngle * RADIAN);
+                  if (percent === 0) return null; // Don't render label for 0%
                   return (
                     <text x={x} y={y} fill="white" textAnchor={x > cx ? 'start' : 'end'} dominantBaseline="central" fontSize={12}>
                       {`${(percent * 100).toFixed(0)}%`}
@@ -181,14 +176,14 @@ export function StatsView() {
       </Card>
       
       {dailySummaryData && (
-         <Card className="lg:col-span-2 glass-card">
+         <Card className="glass-card"> {/* Removed lg:col-span-2 */}
             <CardHeader>
                 <CardTitle className="font-headline text-xl">Yesterday's Snapshot</CardTitle>
             </CardHeader>
-            <CardContent className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
+            <CardContent className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-center">
                 <div>
                     <p className="text-2xl font-bold">{dailySummaryData.completionRate.toFixed(0)}%</p>
-                    <p className="text-sm text-muted-foreground">Completion Rate</p>
+                    <p className="text-sm text-muted-foreground">Completion</p>
                 </div>
                 <div>
                     <p className="text-2xl font-bold">{dailySummaryData.habitsCompleted}</p>
@@ -205,6 +200,7 @@ export function StatsView() {
             </CardContent>
          </Card>
       )}
+      <StatsInsight /> {/* Added AI Stats Insight card */}
     </div>
   );
 }
