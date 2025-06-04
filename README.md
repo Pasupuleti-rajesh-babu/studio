@@ -54,7 +54,7 @@ HabitLocal is a Next.js application (exported as a static site) designed to help
     *   Obtain a Gemini API key from [Google AI Studio](https://aistudio.google.com/app/apikey).
     *   Run the application (see next step).
     *   Click the **Key icon** in the header to open the API Key modal.
-    *   Enter your API key and save. The key is stored locally in your browser's local storage. Without this key, AI features will be disabled.
+    *   Enter your API key and save. The key is stored locally in your browser's local storage using the key `habitlocal_gemini_api_key`. Without this key, AI features will be disabled.
 4.  **Run the development server:**
     ```bash
     npm run dev
@@ -72,32 +72,64 @@ HabitLocal is a Next.js application (exported as a static site) designed to help
     npm run export
     ```
     This will generate the static site in the `/out` directory. Your app files will be under `/out/habitlocal/` due to the `basePath` setting.
-3.  **Prepare for GitHub Pages:**
-    *   **Create `404.html` Fallback:** For client-side routing to work correctly on GitHub Pages, you need a `404.html` file that is a copy of your main `index.html`. Since `basePath: "/habitlocal"` is used, your app's entry point is `out/habitlocal/index.html`.
-        If you are deploying the entire `out` directory to the root of your `gh-pages` branch (or `docs` folder), the `404.html` file should also be at the root of that deployment.
-        Execute this command from your project root after the `npm run export` step:
+
+3.  **`basePath` and Repository Name Considerations:**
+    *   Your `next.config.ts` has `basePath: "/habitlocal"`.
+    *   If your GitHub repository is named `habitlocal` (e.g., `https://github.com/<username>/habitlocal`), you'll access your site at `https://<username>.github.io/habitlocal/`. This configuration is likely correct.
+    *   If your GitHub repository has a different name (e.g., `my-awesome-habits`), you **must** change `basePath` in `next.config.ts` to match that repository name (e.g., `basePath: "/my-awesome-habits"`) **before** running `npm run build` and `npm run export`. Then, you would access it at `https://<username>.github.io/my-awesome-habits/`.
+
+4.  **Deploy to GitHub Pages:**
+
+    You have two main options:
+
+    **Option A: Using the `gh-pages` package (Recommended for simplicity)**
+    This method deploys the contents of the `out` directory directly to a `gh-pages` branch.
+    *   **Install `gh-pages` (if you haven't):**
+        ```bash
+        npm install gh-pages --save-dev
+        ```
+    *   **Create `404.html` Fallback in `out` directory:**
+        For client-side routing to work correctly, GitHub Pages needs a `404.html` at the root of what it serves from the `gh-pages` branch. This file should be a copy of your app's main `index.html`.
+        After running `npm run export`, execute this command from your project root:
         ```bash
         cp out/habitlocal/index.html out/404.html
         ```
-        This ensures that any unknown path is served `out/404.html` (which is actually your app's `index.html`), allowing Next.js router to take over.
-    *   **`basePath` and Repository Name:** Your `next.config.ts` has `basePath: "/habitlocal"`.
-        *   If your GitHub repository is named `habitlocal`, you'll access your site at `https://<username>.github.io/habitlocal/`.
-        *   If your GitHub repository has a different name (e.g., `my-awesome-habits`), you **must** change `basePath` in `next.config.ts` to match that repository name (e.g., `basePath: "/my-awesome-habits"`) **before** running `npm run build` and `npm run export`. Then, you would access it at `https://<username>.github.io/my-awesome-habits/`.
-4.  **Deploy to GitHub Pages:**
-    *   **Using `gh-pages` package:**
-        Install `gh-pages` if you haven't:
-        ```bash
-        npm install gh-pages --save-dev
-        # or
-        # yarn add gh-pages --dev
-        ```
-        Then run (this deploys the contents of the `out` directory):
+    *   **Run the deploy command:**
         ```bash
         npx gh-pages -d out
         ```
-        This will push the contents of the `out` directory to a `gh-pages` branch and enable GitHub Pages if not already configured.
-    *   **Manual commit to `docs` folder:**
-        Alternatively, you can commit the contents of the `out` folder into a `/docs` directory on your `main` (or `master`) branch. Then, in your repository's GitHub settings, under "Pages", configure the source to be "Deploy from a branch" and select your `main` branch with the `/docs` folder.
+        This pushes the contents of the `out` directory (including your new `out/404.html`) to a `gh-pages` branch and usually enables GitHub Pages for that branch.
+
+    **Option B: Manual commit to `/docs` folder on `main` (or `master`) branch**
+    This method involves putting your site's content into a `/docs` folder on your main branch.
+    *   **Ensure your `/docs` folder is clean or create it:**
+        If you have an existing `/docs` folder with old site content, you might want to remove its contents first (e.g., `rm -rf docs/* && mkdir -p docs` from the project root - **be careful with `rm -rf`**). If it doesn't exist, create it:
+        ```bash
+        mkdir -p docs
+        ```
+    *   **Copy exported site to `/docs`:**
+        After running `npm run export` (which creates the site in `/out`), copy the *contents* of the `/out` directory into your `/docs` directory.
+        ```bash
+        cp -r out/. docs/
+        ```
+        This command copies all files and folders (including hidden ones if any) from `out` into `docs`. You should now have `docs/habitlocal/index.html`, etc.
+    *   **Create `404.html` Fallback in `docs` directory:**
+        Similar to Option A, you need a `404.html` at the root of what GitHub Pages serves (which will be the `docs` folder). This should be a copy of your app's main `index.html`.
+        ```bash
+        cp docs/habitlocal/index.html docs/404.html
+        ```
+    *   **Commit and push the `/docs` folder:**
+        Add the `docs` folder to git, commit, and push to your `main` (or `master`) branch.
+        ```bash
+        git add docs
+        git commit -m "Deploy site to /docs folder"
+        git push
+        ```
+    *   **Configure GitHub Pages Settings:**
+        In your repository's GitHub settings, under "Pages":
+        *   Set the "Source" to "Deploy from a branch".
+        *   Set the "Branch" to `main` (or `master`, or whichever branch you committed `/docs` to) and the folder to `/docs`.
+        *   Save the changes. GitHub will then build and deploy your site from the `/docs` folder.
 
 ## How AI Features Work (Client-Side)
 
@@ -124,3 +156,4 @@ The application leverages Google's Gemini models directly in the user's browser:
 *   **CORS:** The Google Gemini API endpoint must remain configured to allow Cross-Origin Resource Sharing (CORS) for requests from browsers. This is typically handled by Google.
 
 Enjoy your one-click GitHub Pages deploy! 🚀
+```
