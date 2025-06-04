@@ -4,7 +4,7 @@
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { Sparkles, Loader2, AlertTriangle, Dices, Trophy, CalendarDays } from 'lucide-react';
+import { Sparkles, Loader2, AlertTriangle, Dices, Trophy, CalendarDays, PlusSquare } from 'lucide-react';
 import { useApiKey } from '@/contexts/ApiKeyContext';
 import { useHabits } from '@/contexts/HabitContext';
 import { generateGamifiedChallenge, GenerateGamifiedChallengeInput, GenerateGamifiedChallengeOutput } from '@/ai/flows/generate-gamified-challenge';
@@ -15,7 +15,7 @@ export function GamifiedChallengeGenerator() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { isApiKeySet } = useApiKey();
-  const { habits } = useHabits();
+  const { habits, addHabit } = useHabits(); // Added addHabit
   const { toast } = useToast();
 
   const activeHabits = habits.filter(h => !h.archived);
@@ -68,6 +68,25 @@ export function GamifiedChallengeGenerator() {
     }
   };
 
+  const handleAddChallengeAsHabit = () => {
+    if (!challenge) return;
+
+    const habitName = challenge.challengeTitle;
+    const habitDescription = `${challenge.challengeDescription} This is a ${challenge.durationDays}-day challenge. Suggested reward: ${challenge.rewardSuggestion}`;
+
+    addHabit({
+      name: habitName,
+      description: habitDescription,
+    });
+
+    toast({
+      title: "Challenge Added as Habit!",
+      description: `"${habitName}" is now in your habit list.`,
+    });
+    // Optionally clear the challenge after adding it
+    // setChallenge(null); 
+  };
+
   return (
     <Card className="mt-12 glass-card">
       <CardHeader>
@@ -104,6 +123,10 @@ export function GamifiedChallengeGenerator() {
                 <Trophy className="mr-2 h-4 w-4" />
                 Reward Suggestion: {challenge.rewardSuggestion}
             </div>
+            <Button onClick={handleAddChallengeAsHabit} variant="outline" size="sm" className="mt-3">
+              <PlusSquare className="mr-2 h-4 w-4" />
+              Add as Habit
+            </Button>
           </div>
         )}
         {!challenge && !isLoading && !error && !isApiKeySet && (
