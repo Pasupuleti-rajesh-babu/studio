@@ -6,7 +6,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter }
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
-import { MoreVertical, Edit3, Trash2, Archive, ArchiveRestore, Zap, BarChart3 } from 'lucide-react';
+import { MoreVertical, Edit3, Trash2, Archive, ArchiveRestore, Zap, BarChart3, Lightbulb } from 'lucide-react';
 import type { Habit } from '@/types';
 import { useHabits } from '@/contexts/HabitContext';
 import { format, isToday, parseISO } from 'date-fns';
@@ -89,7 +89,7 @@ export function HabitCard({ habit }: HabitCardProps) {
                   {habit.archived ? 'Restore' : 'Archive'}
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => setIsRecommendationsDialogOpen(true)}>
-                    <BarChart3 className="mr-2 h-4 w-4" /> Get Insights
+                    <Lightbulb className="mr-2 h-4 w-4" /> Get Insights
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={() => setIsDeleteAlertOpen(true)} className="text-destructive focus:text-destructive focus:bg-destructive/10">
