@@ -1,6 +1,6 @@
-# HabitLocal - Your AI-Powered Habit Companion
+# HabitLocal - Your AI-Powered Habit Companion (Static Version)
 
-HabitLocal is a Next.js application designed to help you track your habits, gain insights into your progress, and stay motivated with AI-powered features. Built with modern web technologies, it offers a seamless and intuitive experience for managing your personal growth.
+HabitLocal is a Next.js application (exported as a static site) designed to help you track your habits, gain insights into your progress, and stay motivated with AI-powered features running entirely in your browser.
 
 ## Features
 
@@ -10,10 +10,10 @@ HabitLocal is a Next.js application designed to help you track your habits, gain
     *   View current streaks for each habit.
     *   Archive habits you're not currently focusing on.
     *   Visually distinct habit cards using generated colors.
-*   **AI-Powered Enhancements (Powered by Gemini & Genkit):**
+*   **AI-Powered Enhancements (Powered by Google Gemini via `@google/genai` SDK, running client-side):**
     *   **Natural Language Habit Creation:** Simply type a sentence like "Read for 20 minutes every evening" and let AI structure it into a habit.
     *   **Daily Micro-Summary:** Get a concise AI-generated summary of your previous day's habit performance.
-    *   **Gamified Challenges:** Generate fun, themed challenges based on your active habits to spice up your routine. You can even add these challenges as new habits!
+    *   **Gamified Challenges:** Generate fun, themed challenges based on your active habits to spice up your routine. You can add these challenges as new habits!
     *   **Personalized Habit Strategies:** Receive AI-driven recommendations and insights on how to improve specific habits, accessible directly from each habit card.
     *   **Stats Insights:** Get an AI-powered textual analysis of your overall habit statistics, providing encouragement and highlighting areas of focus.
 *   **Comprehensive Statistics:**
@@ -29,15 +29,14 @@ HabitLocal is a Next.js application designed to help you track your habits, gain
 
 ## Tech Stack
 
-*   **Frontend:** Next.js (App Router), React, TypeScript
+*   **Frontend:** Next.js (App Router, static export), React, TypeScript
 *   **UI Components:** ShadCN UI
 *   **Styling:** Tailwind CSS
-*   **AI Integration:** Genkit, Google Gemini (via `googleai/gemini-2.0-flash`)
+*   **AI Integration:** Google Gemini (via `@google/genai` JavaScript SDK, client-side)
 *   **State Management:** React Context API, `useLocalStorage` hook
 *   **Charting:** Recharts
 *   **Date Handling:** date-fns
 *   **Form Handling:** react-hook-form with Zod for validation
-*   **Linting & Formatting:** ESLint, Prettier (implied by Next.js setup)
 
 ## Getting Started
 
@@ -55,56 +54,67 @@ HabitLocal is a Next.js application designed to help you track your habits, gain
     *   Run the application (see next step).
     *   Click the **Key icon** in the header to open the API Key modal.
     *   Enter your API key and save. The key is stored locally in your browser's local storage. Without this key, AI features will be disabled.
-4.  **Run the development servers:**
-    *   **Next.js App (Frontend):** In one terminal, run:
+4.  **Run the development server:**
+    ```bash
+    npm run dev
+    ```
+    This usually starts the app on `http://localhost:9002`.
+
+## Building for Static Deployment (e.g., GitHub Pages)
+
+1.  **Build the Next.js app:**
+    ```bash
+    npm run build
+    ```
+2.  **Export to static HTML/CSS/JS:**
+    ```bash
+    npm run export
+    ```
+    This will generate the static site in the `/out` directory.
+3.  **Prepare for GitHub Pages (Optional but Recommended):**
+    *   Create a `404.html` fallback for client-side routing by copying the `index.html`:
         ```bash
-        npm run dev
+        cp out/index.html out/404.html
         ```
-        This usually starts the app on `http://localhost:9002`.
-    *   **Genkit Flows (AI Backend):** In a separate terminal, run:
+    *   If your repository name is different from `habitlocal`, ensure `basePath` in `next.config.ts` matches your repository name (e.g., `basePath: "/your-repo-name"`).
+4.  **Deploy to GitHub Pages:**
+    *   **Using `gh-pages` package:**
+        Install `gh-pages` globally or as a dev dependency:
         ```bash
-        npm run genkit:dev
+        npm install gh-pages --save-dev
+        # or
+        # yarn add gh-pages --dev
         ```
-        This starts the Genkit development server, typically on `http://localhost:3400`, which hosts your AI flows.
+        Then run:
+        ```bash
+        npx gh-pages -d out
+        ```
+        This will push the contents of the `out` directory to a `gh-pages` branch and enable GitHub Pages if not already configured.
+    *   **Manual commit to `docs` folder:**
+        Alternatively, you can commit the contents of the `out` folder into a `/docs` directory on your `main` (or `master`) branch. Then, in your repository's GitHub settings, under "Pages", configure the source to be "Deploy from a branch" and select your `main` branch with the `/docs` folder.
 
-## Project Structure Overview
+## How AI Features Work (Client-Side)
 
-*   `src/app/`: Next.js App Router pages (e.g., `page.tsx`) and layout (`layout.tsx`).
-*   `src/components/`:
-    *   `ai/`: React components for AI-driven UI elements (e.g., `DailySummary.tsx`, `GamifiedChallengeGenerator.tsx`, `StatsInsight.tsx`).
-    *   `core/`: Main structural components (e.g., `Header.tsx`, `HabitTrackerPage.tsx`).
-    *   `habits/`: Components related to habit management (e.g., `HabitCard.tsx`, `HabitForm.tsx`, `HabitList.tsx`, `NaturalLanguageInput.tsx`, `RecommendationsDialog.tsx`).
-    *   `stats/`: Components for displaying statistics (e.g., `StatsView.tsx`).
-    *   `ui/`: ShadCN UI components (e.g., `button.tsx`, `card.tsx`).
-*   `src/ai/`:
-    *   `flows/`: Genkit flow definitions that interact with the Gemini API (e.g., `daily-micro-summary.ts`, `natural-language-habit-creation.ts`).
-    *   `genkit.ts`: Configuration for the global Genkit `ai` instance.
-    *   `dev.ts`: Entry point for the Genkit development server, importing all flows.
-*   `src/contexts/`: React context providers for global state management:
-    *   `ApiKeyContext.tsx`: Manages the Gemini API key.
-    *   `HabitContext.tsx`: Manages the state of habits (CRUD, progress, streaks).
-    *   `ThemeProvider.tsx`: Handles light/dark mode.
-    *   `AppProviders.tsx`: Wraps all context providers.
-*   `src/hooks/`: Custom React hooks (e.g., `useLocalStorage.ts`, `useToast.ts`, `use-mobile.ts`).
-*   `src/lib/`: Utility functions (e.g., `utils.ts` for `cn`).
-*   `src/types/`: TypeScript type definitions (e.g., `index.ts` for `Habit` type).
-*   `public/`: Static assets.
-*   `tailwind.config.ts`: Tailwind CSS configuration.
-*   `next.config.ts`: Next.js configuration.
-*   `components.json`: ShadCN UI configuration.
+The application leverages Google's Gemini models directly in the user's browser:
 
-## How AI Features Work
+1.  **`@google/genai` SDK:** The official Google Generative AI SDK for JavaScript is used to make calls to the Gemini API.
+2.  **Client-Side Wrapper (`src/lib/genai.ts`):** A simple wrapper function `runGemini(prompt)` is created. This function:
+    *   Retrieves the user's Gemini API key from `localStorage` (set via the UI modal).
+    *   Initializes the `GoogleGenerativeAI` client.
+    *   Sends the constructed prompt to the "gemini-1.5-flash-latest" model.
+    *   Returns the text response from the AI.
+3.  **React Components:**
+    *   AI-feature components (e.g., in `src/components/ai/`, `src/components/habits/`) construct specific prompts as strings.
+    *   They call the `runGemini` function with these prompts.
+    *   If the AI is expected to return JSON, the component's prompt instructs the AI to output JSON, and the component then parses the text response into a JavaScript object (with error handling).
+    *   Components manage loading states, display results, and handle potential errors.
+4.  **API Key Requirement:**
+    *   AI features require a valid Gemini API key, stored by the user in their browser's local storage. If the key is missing or invalid, AI features will not work, and error messages will guide the user.
 
-The application leverages Google's Gemini models through the Genkit framework:
+## Caveats of Static/Client-Side AI
 
-1.  **Genkit Flows (`src/ai/flows/`):** These are TypeScript functions running on a Node.js server (via `genkit start`). They define specific AI tasks:
-    *   They use Zod schemas to define expected input and output structures.
-    *   They construct prompts (often using Handlebars templating) tailored for the Gemini model.
-    *   They call the `ai.generate()` or `prompt()` (if using `ai.definePrompt`) method from the Genkit library to interact with the configured Gemini model.
-2.  **Client-Side Interaction:**
-    *   React components (e.g., in `src/components/ai/`) make `async` calls to these Genkit flows (which are server actions in Next.js).
-    *   These components manage loading states, display results from the AI, and handle potential errors.
-3.  **API Key Requirement:**
-    *   The Genkit flows, when executed, require a valid Gemini API key to authenticate with Google's services. This key is configured in `src/ai/genkit.ts` implicitly through environment variables if deployed, or handled by the user providing it via the UI for local development (stored in local storage).
+*   **API Key Exposure:** The API key is stored in the user's browser and used directly in client-side requests. This is generally acceptable for personal use but not recommended for a public SaaS application where you would typically proxy API calls through a backend to protect your key.
+*   **No Server-Side Logic:** All Next.js server features (SSR, API routes, server components that perform server-side tasks) are unavailable in a static export. The application is pure HTML, CSS, and JavaScript.
+*   **CORS:** The Google Gemini API endpoint must remain configured to allow Cross-Origin Resource Sharing (CORS) for requests from browsers. This is typically handled by Google.
 
-Enjoy building and tracking your habits with HabitLocal!
+Enjoy tracking your habits with your fully static, AI-enhanced HabitLocal! 🚀

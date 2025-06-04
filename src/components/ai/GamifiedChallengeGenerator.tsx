@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState } from 'react';
@@ -7,15 +6,65 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Sparkles, Loader2, AlertTriangle, Dices, Trophy, CalendarDays, PlusSquare } from 'lucide-react';
 import { useApiKey } from '@/contexts/ApiKeyContext';
 import { useHabits } from '@/contexts/HabitContext';
-import { generateGamifiedChallenge, GenerateGamifiedChallengeInput, GenerateGamifiedChallengeOutput } from '@/ai/flows/generate-gamified-challenge';
 import { useToast } from "@/hooks/use-toast";
+import { runGemini } from '@/lib/genai'; // Import client-side Gemini runner
+import * as z from 'zod';
+
+// Schema for the expected output (client-side validation)
+const GenerateGamifiedChallengeOutputSchema = z.object({
+  challengeTitle: z.string().describe('A short, catchy title for the habit challenge (max 10 words). Example: \'The 7-Day Hydration Hero Quest\''),
+  challengeDescription: z.string().describe('An engaging description of the challenge, outlining its goals and rules (2-3 sentences). Example: \'Embark on a legendary journey to drink 8 glasses of water daily for 7 days! Track your progress and emerge a hydration champion.\''),
+  durationDays: z.number().int().min(3).max(30).describe('The recommended duration of the challenge in days (choose from 7, 14, 21, or 30). Example: 7'),
+  rewardSuggestion: z.string().describe('A creative and motivating non-monetary reward suggestion for completing the challenge (max 15 words). Example: \'Unlock an evening of your favorite guilt-free entertainment!\''),
+});
+type GenerateGamifiedChallengeOutput = z.infer<typeof GenerateGamifiedChallengeOutputSchema>;
+
+interface GenerateGamifiedChallengeInput {
+  trackedHabits: string[];
+}
+
+// Helper function to build the prompt
+function buildGamifiedChallengePrompt(input: GenerateGamifiedChallengeInput): string {
+  const habitsList = input.trackedHabits.length > 0 
+    ? input.trackedHabits.map(habit => `- ${habit}`).join('\n')
+    : '- General well-being and self-improvement.';
+
+  return `You are a master game designer AI, specializing in creating motivating and fun "Habit Quests" (gamified challenges) for users trying to build positive habits.
+
+The user is currently tracking these habits:
+${habitsList}
+
+Your task is to design a new Habit Quest. The quest should be:
+- Thematic and Engaging: Give it a fun theme (e.g., adventurer, explorer, wizard, scientist, athlete).
+- Supportive: It should ideally support one or more of the user's existing habits, or introduce a related micro-habit.
+- Achievable: The goals should be clear and feel attainable.
+- Motivating: Make it sound exciting!
+
+Output ONLY a valid JSON object in the following format, adhering to the descriptions. Do NOT include any other text or markdown formatting like \`\`\`json:
+{
+  "challengeTitle": "string",
+  "challengeDescription": "string",
+  "durationDays": "number",
+  "rewardSuggestion": "string"
+}
+
+Example "challengeTitle": "The 7-Day Hydration Hero Quest"
+Example "challengeDescription": "Embark on a legendary journey to drink 8 glasses of water daily for 7 days! Track your progress and emerge a hydration champion."
+Example "durationDays": 7 (must be one of 7, 14, 21, or 30)
+Example "rewardSuggestion": "Unlock an evening of your favorite guilt-free entertainment!"
+
+Ensure 'durationDays' is one of 7, 14, 21, or 30.
+The theme should be subtle and integrated into the title and description.
+If no habits are provided, create a general well-being quest.`;
+}
+
 
 export function GamifiedChallengeGenerator() {
   const [challenge, setChallenge] = useState<GenerateGamifiedChallengeOutput | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { isApiKeySet } = useApiKey();
-  const { habits, addHabit } = useHabits(); // Added addHabit
+  const { habits, addHabit } = useHabits();
   const { toast } = useToast();
 
   const activeHabits = habits.filter(h => !h.archived);
@@ -40,27 +89,43 @@ export function GamifiedChallengeGenerator() {
 
     setIsLoading(true);
     setError(null);
-    // Keep previous challenge visible while loading new one, or setChallenge(null) for blank slate
-    // setChallenge(null); 
 
     try {
       const habitNames = activeHabits.map(h => h.name);
-      const input: GenerateGamifiedChallengeInput = {
+      const inputData: GenerateGamifiedChallengeInput = {
         trackedHabits: habitNames,
       };
       
-      const result = await generateGamifiedChallenge(input);
-      setChallenge(result);
+      const prompt = buildGamifiedChallengePrompt(inputData);
+      const resultText = await runGemini(prompt);
+      
+      let parsedResult: GenerateGamifiedChallengeOutput;
+      try {
+        parsedResult = JSON.parse(resultText);
+      } catch (jsonError) {
+        console.error("Failed to parse JSON response from AI:", jsonError, "Raw response:", resultText);
+        throw new Error("AI returned an invalid format. Please try again.");
+      }
+
+      // Validate with Zod
+      const validation = GenerateGamifiedChallengeOutputSchema.safeParse(parsedResult);
+      if (!validation.success) {
+        console.error("Zod validation failed:", validation.error.errors, "Parsed data:", parsedResult);
+        throw new Error("AI returned data in an unexpected structure.");
+      }
+      
+      setChallenge(validation.data);
       toast({
         title: "Challenge Generated!",
-        description: `Your new quest: ${result.challengeTitle}`,
+        description: `Your new quest: ${validation.data.challengeTitle}`,
       });
-    } catch (e) {
+    } catch (e: any) {
       console.error("Error generating gamified challenge:", e);
-      setError("Failed to generate challenge. Please check your API key and try again.");
+      const errorMessage = e.message || "Failed to generate challenge. Please check your API key and try again.";
+      setError(errorMessage);
       toast({
         title: "AI Error",
-        description: "Could not generate a new challenge.",
+        description: errorMessage,
         variant: "destructive",
       });
     } finally {
@@ -83,8 +148,6 @@ export function GamifiedChallengeGenerator() {
       title: "Challenge Added as Habit!",
       description: `"${habitName}" is now in your habit list.`,
     });
-    // Optionally clear the challenge after adding it
-    // setChallenge(null); 
   };
 
   return (

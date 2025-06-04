@@ -1,3 +1,4 @@
+"use client";
 
 import { HabitTrackerPage } from '@/components/core/HabitTrackerPage';
 import { Header } from '@/components/core/Header';

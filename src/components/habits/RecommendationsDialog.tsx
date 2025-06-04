@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect } from 'react';
@@ -13,9 +12,43 @@ import {
 import { Button } from '@/components/ui/button';
 import { Loader2, Sparkles, AlertTriangle, Lightbulb } from 'lucide-react';
 import { useApiKey } from '@/contexts/ApiKeyContext';
-import { recommendHabitStrategies, RecommendHabitStrategiesInput } from '@/ai/flows/recommend-habit-strategies';
 import type { Habit } from '@/types';
 import { useToast } from "@/hooks/use-toast";
+import { runGemini } from '@/lib/genai'; // Import client-side Gemini runner
+import * as z from 'zod';
+
+// Schema for expected output (client-side validation)
+const RecommendHabitStrategiesOutputSchema = z.object({
+  recommendations: z.array(
+    z.string().describe('A list of personalized strategies for improving habit consistency.')
+  ).describe('Personalized habit improvement strategies based on user progress data.'),
+});
+type RecommendHabitStrategiesOutput = z.infer<typeof RecommendHabitStrategiesOutputSchema>;
+
+interface RecommendHabitStrategiesInput {
+  habitName: string;
+  progressData: string; // JSON string
+  userGoals: string;
+}
+
+// Helper function to build the prompt
+function buildRecommendationsPrompt(input: RecommendHabitStrategiesInput): string {
+  return `You are an AI assistant designed to provide personalized recommendations for improving habit consistency.
+
+Analyze the user's habit progress data and goals, and suggest strategies to help them improve.
+
+Habit Name: "${input.habitName}"
+Progress Data (JSON format, dates and completion status): ${input.progressData}
+User Goals: "${input.userGoals}"
+
+Based on this information, provide a list of 2-4 personalized, actionable strategies that the user can implement to improve their consistency and achieve their goals.
+Output ONLY a valid JSON object in the format below. Do NOT include any other text or markdown formatting like \`\`\`json:
+{
+  "recommendations": ["strategy 1", "strategy 2", "strategy 3"]
+}
+`;
+}
+
 
 interface RecommendationsDialogProps {
   isOpen: boolean;
@@ -35,11 +68,13 @@ export function RecommendationsDialog({ isOpen, setIsOpen, habit }: Recommendati
       fetchRecommendations();
     } else if (isOpen && !isApiKeySet) {
         setError("API Key is not set. Please configure it in settings to get AI recommendations.");
+        setIsLoading(false);
     } else if (isOpen && !habit) {
         setError("No habit selected for recommendations.");
+        setIsLoading(false);
     }
     
-    if (!isOpen) { // Reset state when dialog closes
+    if (!isOpen) { 
         setRecommendations([]);
         setError(null);
         setIsLoading(false);
@@ -55,23 +90,40 @@ export function RecommendationsDialog({ isOpen, setIsOpen, habit }: Recommendati
     setRecommendations([]);
 
     try {
-      const progressData = JSON.stringify(habit.progress); // Simple string representation for now
-      const userGoals = `Improve consistency for habit: ${habit.name}. ${habit.description || ''}`; // Basic goal
+      const progressData = JSON.stringify(habit.progress); 
+      const userGoals = `Improve consistency for habit: ${habit.name}. ${habit.description || ''}`; 
 
-      const input: RecommendHabitStrategiesInput = {
+      const inputData: RecommendHabitStrategiesInput = {
         habitName: habit.name,
         progressData,
         userGoals,
       };
 
-      const result = await recommendHabitStrategies(input);
-      setRecommendations(result.recommendations);
-    } catch (e) {
+      const prompt = buildRecommendationsPrompt(inputData);
+      const resultText = await runGemini(prompt);
+      
+      let parsedResult: RecommendHabitStrategiesOutput;
+      try {
+        parsedResult = JSON.parse(resultText);
+      } catch (jsonError) {
+        console.error("Failed to parse JSON response from AI for recommendations:", jsonError, "Raw response:", resultText);
+        throw new Error("AI returned an invalid format for recommendations. Please try again.");
+      }
+      
+      const validation = RecommendHabitStrategiesOutputSchema.safeParse(parsedResult);
+      if (!validation.success) {
+          console.error("Zod validation failed for recommendations:", validation.error.errors, "Parsed data:", parsedResult);
+          throw new Error("AI returned data in an unexpected structure for recommendations.");
+      }
+
+      setRecommendations(validation.data.recommendations);
+    } catch (e: any) {
       console.error("Error fetching recommendations:", e);
-      setError("Failed to generate recommendations. Please check your API key and try again.");
+      const errorMessage = e.message || "Failed to generate recommendations. Please check your API key and try again.";
+      setError(errorMessage);
       toast({
         title: "AI Error",
-        description: "Could not generate recommendations.",
+        description: errorMessage,
         variant: "destructive",
       });
     } finally {
@@ -115,14 +167,14 @@ export function RecommendationsDialog({ isOpen, setIsOpen, habit }: Recommendati
              <p className="text-muted-foreground p-4 text-center">No specific recommendations available at this moment. Keep tracking your progress!</p>
            )}
         </div>
-        <DialogFooter>
+        <DialogFooter className="flex-col sm:flex-row gap-2">
           {isApiKeySet && habit && !error && (
-            <Button onClick={fetchRecommendations} disabled={isLoading} variant="outline">
+            <Button onClick={fetchRecommendations} disabled={isLoading} variant="outline" className="w-full sm:w-auto">
               {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
               Refresh Strategies
             </Button>
           )}
-          <Button onClick={() => setIsOpen(false)}>Close</Button>
+          <Button onClick={() => setIsOpen(false)} className="w-full sm:w-auto">Close</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

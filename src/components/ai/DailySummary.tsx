@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect } from 'react';
@@ -7,9 +6,24 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Sparkles, Loader2, AlertTriangle } from 'lucide-react';
 import { useApiKey } from '@/contexts/ApiKeyContext';
 import { useHabits } from '@/contexts/HabitContext';
-import { getDailyMicroSummary, DailyMicroSummaryInput } from '@/ai/flows/daily-micro-summary';
 import { useToast } from "@/hooks/use-toast";
 import { format, subDays } from 'date-fns';
+import { runGemini } from '@/lib/genai'; // Import client-side Gemini runner
+
+interface DailySummaryInput {
+  completionRate: number;
+  totalHabits: number;
+  habitsCompleted: number;
+  longestStreak: number;
+}
+
+// Helper function to build the prompt
+function buildDailySummaryPrompt(input: DailySummaryInput): string {
+  return `Yesterday, you completed ${input.habitsCompleted} out of ${input.totalHabits} habits, resulting in a completion rate of ${input.completionRate}%. Your longest streak is ${input.longestStreak} days.
+
+Provide a single-sentence summary of this information, highlighting the most relevant information to motivate the user. Focus on positive achievements and potential areas for improvement. The output should be a single sentence of text only.`;
+}
+
 
 export function DailySummary() {
   const [summary, setSummary] = useState<string | null>(null);
@@ -66,21 +80,25 @@ export function DailySummary() {
         return streak;
      }));
 
-      const input: DailyMicroSummaryInput = {
+      const inputData: DailySummaryInput = {
         completionRate: parseFloat(completionRate.toFixed(1)),
         totalHabits,
         habitsCompleted,
         longestStreak,
       };
       
-      const result = await getDailyMicroSummary(input);
-      setSummary(result.summary);
-    } catch (e) {
+      const prompt = buildDailySummaryPrompt(inputData);
+      const resultText = await runGemini(prompt);
+      // Assuming the result is plain text as per runGemini's design
+      setSummary(resultText);
+
+    } catch (e: any) {
       console.error("Error fetching daily summary:", e);
-      setError("Failed to generate summary. Please check your API key and try again.");
+      const errorMessage = e.message || "Failed to generate summary. Please check your API key and try again.";
+      setError(errorMessage);
       toast({
         title: "AI Error",
-        description: "Could not generate daily summary.",
+        description: errorMessage,
         variant: "destructive",
       });
     } finally {
@@ -88,13 +106,12 @@ export function DailySummary() {
     }
   };
   
-  // Automatically generate summary on load if API key is set and habits exist
   useEffect(() => {
     if (isApiKeySet && activeHabits.length > 0) {
-      generateSummary();
+      // generateSummary(); // Optionally auto-generate on load
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isApiKeySet, activeHabits.length]); // Only run when API key status or habit count changes significantly
+  }, [isApiKeySet, activeHabits.length]);
 
   return (
     <Card className="my-8 glass-card">

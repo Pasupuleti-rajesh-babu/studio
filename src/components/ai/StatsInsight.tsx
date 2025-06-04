@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -7,10 +6,72 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Bot, Loader2, AlertTriangle, RefreshCw } from 'lucide-react';
 import { useApiKey } from '@/contexts/ApiKeyContext';
 import { useHabits } from '@/contexts/HabitContext';
-import { analyzeStats, AnalyzeStatsInput } from '@/ai/flows/analyze-stats-flow';
 import { useToast } from "@/hooks/use-toast";
 import { format, subDays, eachDayOfInterval, differenceInDays, parseISO } from 'date-fns';
-import type { Habit } from '@/types';
+import { runGemini } from '@/lib/genai'; // Import client-side Gemini runner
+import * as z from 'zod';
+
+// Schema for expected output (client-side validation)
+const AnalyzeStatsOutputSchema = z.object({
+  insight: z
+    .string()
+    .describe(
+      'A concise (1-2 sentences), actionable, and encouraging insight based on the provided stats. Example: "Your dedication is showing with an improving trend in completing your {activeHabitCount} habits! Keep up the great work on \'{highestPerformingHabit.name}\'. Maybe give \'{lowestPerformingHabit.name}\' a little extra focus this week?"'
+    ),
+});
+type AnalyzeStatsOutput = z.infer<typeof AnalyzeStatsOutputSchema>;
+
+interface AnalyzeStatsInput {
+  overallCompletionTrend: string;
+  lowestPerformingHabit?: { name: string; rate: number };
+  highestPerformingHabit?: { name: string; rate: number };
+  activeHabitCount: number;
+  averageCompletionRateLast7Days?: number;
+}
+
+// Helper function to build the prompt
+function buildStatsInsightPrompt(input: AnalyzeStatsInput): string {
+  let prompt = `You are an encouraging and insightful AI habit coach.
+The user is tracking ${input.activeHabitCount} habits.
+Their overall completion trend is: ${input.overallCompletionTrend}.
+`;
+  if (input.averageCompletionRateLast7Days !== undefined) {
+    prompt += `Their average completion rate in the last 7 days was ${input.averageCompletionRateLast7Days}%.
+`;
+  }
+  if (input.highestPerformingHabit) {
+    prompt += `Their best performing habit is '${input.highestPerformingHabit.name}' with ${input.highestPerformingHabit.rate}% success.
+`;
+  }
+  if (input.lowestPerformingHabit) {
+    prompt += `Their habit needing more attention is '${input.lowestPerformingHabit.name}' with ${input.lowestPerformingHabit.rate}% success.
+`;
+  } else {
+    prompt += `All habits are doing well!
+`;
+  }
+  prompt += `
+Based on this, provide a concise (1-2 sentences), actionable, and encouraging insight.
+If there's a lowest performing habit, gently suggest focusing on it. If all habits are doing well, celebrate that.
+Be positive and motivational.
+
+Output ONLY a valid JSON object in the format below. Do NOT include any other text or markdown formatting like \`\`\`json:
+{
+  "insight": "string"
+}
+
+Example if lowest performing habit exists:
+{
+  "insight": "Your dedication is showing with an ${input.overallCompletionTrend} trend in completing your ${input.activeHabitCount} habits! Keep up the great work, especially on '${input.highestPerformingHabit?.name || 'your habits'}'. Maybe give '${input.lowestPerformingHabit?.name || 'some habits'}' a little extra focus this week?"
+}
+Example if no lowest performing habit:
+{
+  "insight": "Fantastic work maintaining a ${input.overallCompletionTrend} trend across your ${input.activeHabitCount} habits! You're doing great with '${input.highestPerformingHabit?.name || 'your habits'}' and all your other habits are on track too!"
+}
+`;
+  return prompt;
+}
+
 
 export function StatsInsight() {
   const [insight, setInsight] = useState<string | null>(null);
@@ -25,7 +86,6 @@ export function StatsInsight() {
   const calculatedStats = useMemo(() => {
     if (activeHabits.length === 0) return null;
 
-    // Overall Completion Data (last 14 days for trend)
     const endDate = new Date();
     const startDate14 = subDays(endDate, 13);
     const dateInterval14 = eachDayOfInterval({ start: startDate14, end: endDate });
@@ -59,33 +119,20 @@ export function StatsInsight() {
     } else if (completionData14.length >= 7) {
         const last7DaysRates = completionData14.map(d => d.rate);
         averageCompletionRateLast7Days = parseFloat((last7DaysRates.reduce((sum, rate) => sum + rate, 0) / (last7DaysRates.length || 1)).toFixed(1));
-        // Not enough data for a strong trend, keep as stable or derive from slope if desired
     }
 
-
-    // Habit Specific Completion
     const habitSpecificCompletion = activeHabits.map(habit => {
-      // Consider only progress within a relevant window, e.g., last 30 days or since creation if newer
       const relevantProgressEntries = Object.entries(habit.progress).filter(([dateStr]) => {
           const progressDate = parseISO(dateStr);
-          return differenceInDays(endDate, progressDate) <= 30; // Max 30 days of history for rate
+          return differenceInDays(endDate, progressDate) <= 30;
       });
-
       const completedEntries = relevantProgressEntries.filter(([, completed]) => completed).length;
-      const totalConsideredDays = Math.max(1, relevantProgressEntries.length, differenceInDays(endDate, parseISO(habit.createdAt)) + 1); // Avoid division by zero
-      
-      // If no progress entries in last 30 days, but habit is new, use total days tracked
-      // Default to total entries if no relevant ones, or since creation for newer habits
       const denominator = relevantProgressEntries.length > 0 ? relevantProgressEntries.length : Math.min(30, differenceInDays(endDate, parseISO(habit.createdAt)) +1);
-
-
       return {
         name: habit.name,
-        // rate: totalConsideredDays > 0 ? parseFloat(((completedEntries / totalConsideredDays) * 100).toFixed(1)) : 0,
         rate: denominator > 0 ? parseFloat(((completedEntries / denominator) * 100).toFixed(1)) : 0,
-
       };
-    }).sort((a, b) => a.rate - b.rate); // Sort by completion rate (ascending)
+    }).sort((a, b) => a.rate - b.rate);
 
     const lowestPerformingHabit = habitSpecificCompletion.length > 0 && habitSpecificCompletion[0].rate < 100 ? habitSpecificCompletion[0] : undefined;
     const highestPerformingHabit = habitSpecificCompletion.length > 0 ? habitSpecificCompletion[habitSpecificCompletion.length - 1] : undefined;
@@ -122,7 +169,7 @@ export function StatsInsight() {
     setInsight(null);
 
     try {
-      const input: AnalyzeStatsInput = {
+      const inputData: AnalyzeStatsInput = {
         overallCompletionTrend: calculatedStats.overallCompletionTrend,
         lowestPerformingHabit: calculatedStats.lowestPerformingHabit,
         highestPerformingHabit: calculatedStats.highestPerformingHabit,
@@ -130,14 +177,31 @@ export function StatsInsight() {
         averageCompletionRateLast7Days: calculatedStats.averageCompletionRateLast7Days,
       };
       
-      const result = await analyzeStats(input);
-      setInsight(result.insight);
-    } catch (e) {
+      const prompt = buildStatsInsightPrompt(inputData);
+      const resultText = await runGemini(prompt);
+
+      let parsedResult: AnalyzeStatsOutput;
+      try {
+        parsedResult = JSON.parse(resultText);
+      } catch (jsonError) {
+        console.error("Failed to parse JSON response from AI for stats insight:", jsonError, "Raw response:", resultText);
+        throw new Error("AI returned an invalid format for stats insight. Please try again.");
+      }
+
+      const validation = AnalyzeStatsOutputSchema.safeParse(parsedResult);
+      if(!validation.success) {
+          console.error("Zod validation failed for stats insight:", validation.error.errors, "Parsed data:", parsedResult);
+          throw new Error("AI returned data in an unexpected structure for stats insight.");
+      }
+      
+      setInsight(validation.data.insight);
+    } catch (e: any) {
       console.error("Error fetching stats insight:", e);
-      setError("Failed to generate insight. Please check your API key and try again.");
+      const errorMessage = e.message || "Failed to generate insight. Please check your API key and try again.";
+      setError(errorMessage);
       toast({
         title: "AI Error",
-        description: "Could not generate stats insight.",
+        description: errorMessage,
         variant: "destructive",
       });
     } finally {
@@ -146,15 +210,13 @@ export function StatsInsight() {
   };
   
   useEffect(() => {
-    // Auto-generate if API key is set, habits exist, and no insight yet
-    // Allow manual refresh even if an insight exists
     if (isApiKeySet && activeHabits.length > 0 && !insight && !isLoading && !error) {
-      generateInsight();
+      // generateInsight(); // Optionally auto-generate
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isApiKeySet, activeHabits.length, calculatedStats]); // Re-run if critical data changes
+  }, [isApiKeySet, activeHabits.length, calculatedStats]); 
 
-  if (activeHabits.length === 0 && !isApiKeySet) return null; // Don't show card if no habits and no key
+  if (activeHabits.length === 0 && !isApiKeySet) return null;
 
   return (
     <Card className="glass-card">
